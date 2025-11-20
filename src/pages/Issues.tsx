@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { mockIssues } from "@/mock-data/issues";
 import { IssueCategory, IssueStatus, Department } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,8 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Link } from "react-router-dom";
-import { Search, Filter } from "lucide-react";
+import { Search, Filter, Loader2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useQuery } from "@tanstack/react-query";
+import { issuesAPI } from "@/services/api";
 
 export default function Issues() {
   const { t } = useLanguage();
@@ -18,19 +19,26 @@ export default function Issues() {
   const [statusFilter, setStatusFilter] = useState<IssueStatus | "ALL">("ALL");
   const [departmentFilter, setDepartmentFilter] = useState<Department | "ALL">("ALL");
 
-  const filteredIssues = mockIssues.filter((issue) => {
+  // Fetch issues from API
+  const { data: issues = [], isLoading, error } = useQuery({
+    queryKey: ["issues", categoryFilter, statusFilter],
+    queryFn: () => issuesAPI.getAll({
+      category: categoryFilter !== "ALL" ? categoryFilter : undefined,
+      status: statusFilter !== "ALL" ? statusFilter : undefined,
+    }),
+  });
+
+  const filteredIssues = issues.filter((issue) => {
     const matchesSearch =
       searchQuery === "" ||
       issue.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       issue.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       issue.location.address.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesCategory = categoryFilter === "ALL" || issue.category === categoryFilter;
-    const matchesStatus = statusFilter === "ALL" || issue.status === statusFilter;
     const matchesDepartment =
       departmentFilter === "ALL" || issue.assignedTo?.department === departmentFilter;
 
-    return matchesSearch && matchesCategory && matchesStatus && matchesDepartment;
+    return matchesSearch && matchesDepartment;
   });
 
   const formatAge = (hours: number) => {
@@ -121,55 +129,70 @@ export default function Issues() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("issueId")}</TableHead>
-                <TableHead>{t("category")}</TableHead>
-                <TableHead>{t("title")}</TableHead>
-                <TableHead>{t("location")}</TableHead>
-                <TableHead>{t("reportedDate")}</TableHead>
-                <TableHead>{t("status")}</TableHead>
-                <TableHead>{t("assignedDept")}</TableHead>
-                <TableHead>{t("age")}</TableHead>
-                <TableHead className="text-right">{t("actions")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredIssues.map((issue) => (
-                <TableRow key={issue.id}>
-                  <TableCell className="font-mono text-sm">{issue.id}</TableCell>
-                  <TableCell>{t(issue.category.toLowerCase())}</TableCell>
-                  <TableCell className="max-w-xs truncate">{issue.title}</TableCell>
-                  <TableCell>
-                    <div className="text-sm">{issue.location.city}</div>
-                    <div className="text-xs text-muted-foreground">{issue.location.ward}</div>
-                  </TableCell>
-                  <TableCell>
-                    {new Date(issue.reportedDate).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={issue.status} />
-                  </TableCell>
-                  <TableCell>
-                    {issue.assignedTo ? t(issue.assignedTo.department.toLowerCase()) : "-"}
-                  </TableCell>
-                  <TableCell>
-                    <span className={issue.slaBreached ? "text-destructive font-medium" : ""}>
-                      {formatAge(issue.ageInHours)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Link to={`/issues/${issue.id}`}>
-                      <Button variant="outline" size="sm">
-                        {t("viewDetails")}
-                      </Button>
-                    </Link>
-                  </TableCell>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="ml-2 text-muted-foreground">Loading issues...</span>
+            </div>
+          ) : error ? (
+            <div className="text-center py-12 text-destructive">
+              Error loading issues. Please try again.
+            </div>
+          ) : filteredIssues.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              No issues found.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("issueId")}</TableHead>
+                  <TableHead>{t("category")}</TableHead>
+                  <TableHead>{t("title")}</TableHead>
+                  <TableHead>{t("location")}</TableHead>
+                  <TableHead>{t("reportedDate")}</TableHead>
+                  <TableHead>{t("status")}</TableHead>
+                  <TableHead>{t("assignedDept")}</TableHead>
+                  <TableHead>{t("age")}</TableHead>
+                  <TableHead className="text-right">{t("actions")}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredIssues.map((issue) => (
+                  <TableRow key={issue.id}>
+                    <TableCell className="font-mono text-sm">{issue.id}</TableCell>
+                    <TableCell>{t(issue.category.toLowerCase())}</TableCell>
+                    <TableCell className="max-w-xs truncate">{issue.title}</TableCell>
+                    <TableCell>
+                      <div className="text-sm">{issue.location.city}</div>
+                      <div className="text-xs text-muted-foreground">{issue.location.ward}</div>
+                    </TableCell>
+                    <TableCell>
+                      {new Date(issue.reportedDate).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={issue.status} />
+                    </TableCell>
+                    <TableCell>
+                      {issue.assignedTo ? t(issue.assignedTo.department.toLowerCase()) : "-"}
+                    </TableCell>
+                    <TableCell>
+                      <span className={issue.slaBreached ? "text-destructive font-medium" : ""}>
+                        {formatAge(issue.ageInHours)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Link to={`/issues/${issue.id}`}>
+                        <Button variant="outline" size="sm">
+                          {t("viewDetails")}
+                        </Button>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

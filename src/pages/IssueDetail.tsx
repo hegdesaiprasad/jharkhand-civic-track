@@ -1,22 +1,30 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { mockIssues } from "@/mock-data/issues";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/StatusBadge";
 import { MapView } from "@/components/MapView";
-import { ArrowLeft, User, Phone, MapPin, Calendar } from "lucide-react";
+import { ArrowLeft, User, Phone, MapPin, Calendar, Loader2 } from "lucide-react";
 import { IssueStatus, Department } from "@/types";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { issuesAPI } from "@/services/api";
 
 export default function IssueDetail() {
   const { id } = useParams();
   const { t } = useLanguage();
-  const issue = mockIssues.find((i) => i.id === id);
+  const queryClient = useQueryClient();
+
+  // Fetch issue from API
+  const { data: issue, isLoading, error } = useQuery({
+    queryKey: ["issue", id],
+    queryFn: () => issuesAPI.getById(id!),
+    enabled: !!id,
+  });
 
   const [selectedDepartment, setSelectedDepartment] = useState<Department | "">(
     issue?.assignedTo?.department || ""
@@ -25,7 +33,36 @@ export default function IssueDetail() {
   const [newStatus, setNewStatus] = useState<IssueStatus>(issue?.status || "NEW");
   const [notes, setNotes] = useState("");
 
-  if (!issue) {
+  // Update issue status mutation
+  const updateStatusMutation = useMutation({
+    mutationFn: (data: {
+      status: string;
+      assignedDepartment?: string;
+      assignedOfficerName?: string;
+      notes?: string;
+    }) => issuesAPI.updateStatus(id!, data),
+    onSuccess: () => {
+      // Invalidate and refetch issue data
+      queryClient.invalidateQueries({ queryKey: ["issue", id] });
+      queryClient.invalidateQueries({ queryKey: ["issues"] });
+      toast.success("Issue updated successfully!");
+      setNotes("");
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || "Failed to update issue");
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading issue details...</span>
+      </div>
+    );
+  }
+
+  if (error || !issue) {
     return (
       <div className="text-center py-12">
         <h2 className="text-2xl font-bold mb-2">Issue not found</h2>
@@ -41,7 +78,13 @@ export default function IssueDetail() {
       toast.error("Please select department and officer");
       return;
     }
-    toast.success(`Issue assigned to ${selectedDepartment} - ${selectedOfficer}`);
+
+    updateStatusMutation.mutate({
+      status: issue.status,
+      assignedDepartment: selectedDepartment,
+      assignedOfficerName: selectedOfficer,
+      notes: `Assigned to ${selectedDepartment} - ${selectedOfficer}`,
+    });
   };
 
   const handleStatusUpdate = () => {
@@ -49,8 +92,13 @@ export default function IssueDetail() {
       toast.error("Please add notes for status update");
       return;
     }
-    toast.success(`Status updated to ${newStatus}`);
-    setNotes("");
+
+    updateStatusMutation.mutate({
+      status: newStatus,
+      assignedDepartment: selectedDepartment || undefined,
+      assignedOfficerName: selectedOfficer || undefined,
+      notes: notes,
+    });
   };
 
   // Mock officer list based on department
@@ -195,8 +243,19 @@ export default function IssueDetail() {
                 </div>
               )}
 
-              <Button onClick={handleAssign} className="w-full">
-                {t("assign")}
+              <Button
+                onClick={handleAssign}
+                className="w-full"
+                disabled={updateStatusMutation.isPending}
+              >
+                {updateStatusMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  t("assign")
+                )}
               </Button>
             </CardContent>
           </Card>
