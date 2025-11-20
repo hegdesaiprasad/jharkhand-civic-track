@@ -38,7 +38,7 @@ export const Topbar = () => {
   return (
     <header className="h-16 border-b bg-card flex items-center justify-between px-6">
       <div className="text-sm text-muted-foreground">
-        {authority.location} • {authority.department}
+        {authority.city} • {authority.municipalityType}
       </div>
 
       <div className="flex items-center gap-4">
@@ -54,7 +54,7 @@ export const Topbar = () => {
               </Avatar>
               <div className="text-left">
                 <div className="text-sm font-medium">{authority.name}</div>
-                <div className="text-xs text-muted-foreground">{authority.department}</div>
+                <div className="text-xs text-muted-foreground">{authority.municipalityType}</div>
               </div>
             </Button>
           </DropdownMenuTrigger>
