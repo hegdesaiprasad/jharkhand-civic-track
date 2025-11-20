@@ -52,8 +52,8 @@ export interface Authority {
   name: string;
   phone: string;
   email: string;
-  department: Department;
-  location: string;
+  city: string;
+  municipalityType: "Municipal Corporation" | "Municipal Council" | "Nagar Panchayat";
 }
 
 export interface KPIData {
