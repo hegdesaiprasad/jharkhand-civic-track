@@ -315,16 +315,62 @@ export const getAnalytics = async (req: Request, res: Response): Promise<void> =
 
         const kpi = kpiResult.rows[0];
 
-        // Get department performance
+        // Calculate average response time (time to first acknowledgment)
+        const responseTimeResult = await pool.query(`
+      SELECT AVG(EXTRACT(EPOCH FROM (h.timestamp - i.reported_date)) / 3600) as avg_response_hours
+      FROM issues i
+      INNER JOIN (
+        SELECT issue_id, MIN(timestamp) as timestamp
+        FROM issue_history
+        WHERE status IN ('ACKNOWLEDGED', 'IN_PROGRESS')
+        GROUP BY issue_id
+      ) h ON i.id = h.issue_id
+    `);
+
+        const avgResponseHours = parseFloat(responseTimeResult.rows[0]?.avg_response_hours || 0);
+        const avgResponseTime = avgResponseHours > 0
+            ? (avgResponseHours >= 24
+                ? `${(avgResponseHours / 24).toFixed(1)} days`
+                : `${avgResponseHours.toFixed(1)} hours`)
+            : '0 hours';
+
+        // Calculate average resolution time (time to resolve)
+        const resolutionTimeResult = await pool.query(`
+      SELECT AVG(EXTRACT(EPOCH FROM (h.timestamp - i.reported_date)) / 86400) as avg_resolution_days
+      FROM issues i
+      INNER JOIN (
+        SELECT issue_id, timestamp
+        FROM issue_history
+        WHERE status = 'RESOLVED'
+      ) h ON i.id = h.issue_id
+    `);
+
+        const avgResolutionDays = parseFloat(resolutionTimeResult.rows[0]?.avg_resolution_days || 0);
+        const avgResolutionTime = avgResolutionDays > 0
+            ? (avgResolutionDays < 1
+                ? `${(avgResolutionDays * 24).toFixed(1)} hours`
+                : `${avgResolutionDays.toFixed(1)} days`)
+            : '0 days';
+
+        // Get department performance with real resolution times
         const deptResult = await pool.query(`
       SELECT 
-        assigned_department as department,
+        i.assigned_department as department,
         COUNT(*) as issues_handled,
-        COUNT(CASE WHEN status = 'RESOLVED' THEN 1 END) as resolved,
-        ROUND(COUNT(CASE WHEN status = 'RESOLVED' THEN 1 END)::numeric / NULLIF(COUNT(*), 0) * 100, 2) as resolved_percentage
-      FROM issues
-      WHERE assigned_department IS NOT NULL
-      GROUP BY assigned_department
+        COUNT(CASE WHEN i.status = 'RESOLVED' THEN 1 END) as resolved,
+        ROUND(COUNT(CASE WHEN i.status = 'RESOLVED' THEN 1 END)::numeric / NULLIF(COUNT(*), 0) * 100, 2) as resolved_percentage,
+        AVG(CASE 
+          WHEN h.timestamp IS NOT NULL THEN EXTRACT(EPOCH FROM (h.timestamp - i.reported_date)) / 86400
+          ELSE NULL
+        END) as avg_resolution_days
+      FROM issues i
+      LEFT JOIN (
+        SELECT issue_id, timestamp
+        FROM issue_history
+        WHERE status = 'RESOLVED'
+      ) h ON i.id = h.issue_id
+      WHERE i.assigned_department IS NOT NULL
+      GROUP BY i.assigned_department
       ORDER BY issues_handled DESC
     `);
 
@@ -332,16 +378,25 @@ export const getAnalytics = async (req: Request, res: Response): Promise<void> =
             kpi: {
                 totalIssues: parseInt(kpi.total_issues),
                 resolvedIssues: parseInt(kpi.resolved_issues),
-                avgResponseTime: '12 hours',
-                avgResolutionTime: '3.2 days',
+                avgResponseTime,
+                avgResolutionTime,
                 openSLABreached: parseInt(kpi.sla_breached),
             },
-            departmentPerformance: deptResult.rows.map(row => ({
-                department: row.department,
-                issuesHandled: parseInt(row.issues_handled),
-                avgResolutionTime: '3.5 days',
-                resolvedPercentage: parseFloat(row.resolved_percentage) || 0,
-            })),
+            departmentPerformance: deptResult.rows.map(row => {
+                const deptResolutionDays = parseFloat(row.avg_resolution_days || 0);
+                const deptResolutionTime = deptResolutionDays > 0
+                    ? (deptResolutionDays < 1
+                        ? `${(deptResolutionDays * 24).toFixed(1)} hours`
+                        : `${deptResolutionDays.toFixed(1)} days`)
+                    : 'N/A';
+
+                return {
+                    department: row.department,
+                    issuesHandled: parseInt(row.issues_handled),
+                    avgResolutionTime: deptResolutionTime,
+                    resolvedPercentage: parseFloat(row.resolved_percentage) || 0,
+                };
+            }),
         });
     } catch (error) {
         console.error('Get analytics error:', error);

@@ -74,7 +74,7 @@ CREATE INDEX idx_issues_reported_date ON issues(reported_date);
 CREATE INDEX idx_issue_history_issue_id ON issue_history(issue_id);
 CREATE INDEX idx_authorities_email ON authorities(email);
 
--- Create a function to update the updated_at timestamp
+-- Create a function to update the updated_at timestamp for authorities
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -83,9 +83,18 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Create triggers to auto-update updated_at
+-- Create a function to update the updated_date timestamp for issues
+CREATE OR REPLACE FUNCTION update_updated_date_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_date = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Create triggers to auto-update timestamps
 CREATE TRIGGER update_authorities_updated_at BEFORE UPDATE ON authorities
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_issues_updated_at BEFORE UPDATE ON issues
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_issues_updated_date BEFORE UPDATE ON issues
+    FOR EACH ROW EXECUTE FUNCTION update_updated_date_column();

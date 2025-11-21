@@ -291,8 +291,19 @@ export default function IssueDetail() {
                 />
               </div>
 
-              <Button onClick={handleStatusUpdate} className="w-full">
-                {t("update")}
+              <Button
+                onClick={handleStatusUpdate}
+                className="w-full"
+                disabled={updateStatusMutation.isPending}
+              >
+                {updateStatusMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  t("update")
+                )}
               </Button>
             </CardContent>
           </Card>
